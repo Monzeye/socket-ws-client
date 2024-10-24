@@ -36,7 +36,7 @@ export function setObjToUrlParams(baseUrl: string, obj?: Record<string, any>) {
   if (parameters) {
     return /\?$/.test(baseUrl)
       ? baseUrl + parameters
-      : baseUrl.replace(/\/?$/, '?') + parameters
+      : `${baseUrl}?${parameters}`
   }
   return baseUrl
 }
@@ -52,25 +52,22 @@ export function objToQueryParams(params: Record<string, any>, isEncode = true) {
   }
   let result = ''
   for (const propName of Object.keys(params)) {
-    const value = params[propName]
+    const value = params[propName] ?? ''
     const part = encode(propName, isEncode) + '='
-    if (value !== null && value !== '' && typeof value !== 'undefined') {
-      if (typeof value === 'object') {
-        for (const key of Object.keys(value)) {
-          if (
-            value[key] !== null &&
-            value[key] !== '' &&
-            typeof value[key] !== 'undefined'
-          ) {
-            const params = propName + '[' + key + ']'
-            const subPart = encode(params, isEncode) + '='
-            result += '&' + subPart + encode(value[key], isEncode)
-          }
-        }
-      } else {
-        result += '&' + part + encode(value, isEncode)
+
+    if (typeof value === 'object') {
+      for (const key of Object.keys(value)) {
+        const itmVal = value[key] ?? ''
+
+        const params = propName + '[' + key + ']'
+        const subPart = encode(params, isEncode) + '='
+        result += '&' + subPart + encode(itmVal, isEncode)
+
       }
+    } else {
+      result += '&' + part + encode(value, isEncode)
     }
+
   }
   return result.substring(1)
 }
