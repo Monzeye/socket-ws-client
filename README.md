@@ -15,7 +15,8 @@ interface SocketClientConfig {
   transformProtocol?: boolean // 是否转换协议 http=>ws https=>wss 默认 true
   protocols?: any // 原生new WebSocket(url,protocols?)的第二个参数
   binaryType?: 'blob' | 'arraybuffer' // websocket 连接所传输二进制数据的类型
-  heartbeat?: {
+  transformMessageData?: boolean // 是否转换使用JSON.parse将message的data数据进行转换
+  heartbeat?: boolean | {
     // 心跳相关配置
     interval?: number // 心跳间隔 默认 3*1000 3秒
     pingFormat?: string | (() => any) // 心跳发送数据 默认 ping
@@ -26,7 +27,7 @@ interface SocketClientConfig {
     ignore?: boolean // message事件过滤掉ping返回消息	默认 true
     //  pongMatch匹配成功则不进入到message里
   }
-  reconnect?: {
+  reconnect?: boolean | {
     // 重连相关配置
     interval?: number // 重连间隔 默认 3*1000 3秒
     retryCount?: number // 重来尝试次数 默认 Infinity 无数次
@@ -55,6 +56,7 @@ interface SocketClientConfig {
 | dispose | 卸载socket                                                   | ()=>void                    |
 | on      | 注册事件                                                     | (EventName,(...args)=>void) |
 | off     | 移除事件                                                     | (EventName,(...args)=>void) |
+| setUrl     | 更换socketUrl地址                                         | (url:string)=>void   |
 
 ### EventName
 
