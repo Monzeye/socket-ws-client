@@ -76,7 +76,7 @@ export function objToQueryParams(params: Record<string, any>, isEncode = true) {
  * @param data xxxArray
  * @returns boolean
  */
-export function isBufferData(data: any) {
+export function isTypedArray(data: any): data is (Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array | BigInt64Array | BigUint64Array) {
   if (
     data instanceof Int8Array ||
     data instanceof Uint8Array ||
@@ -99,7 +99,7 @@ export function isBufferData(data: any) {
  * @param data any
  * @returns boolean
  */
-export function isBlob(data: any) {
+export function isBlob(data: any): data is Blob {
   if (data instanceof Blob) {
     return true
   }
@@ -110,12 +110,25 @@ export function isBlob(data: any) {
  * @param data any
  * @returns boolean
  */
-export function isArrayBuffer(data: any) {
+export function isArrayBuffer(data: any): data is ArrayBuffer {
   if (data instanceof ArrayBuffer) {
     return true
   }
   return false
 }
+
+/**
+ * 是否是DataView
+ * @param data any
+ * @returns boolean
+ */
+export function isDataView(data: any): data is DataView {
+  if (data instanceof DataView) {
+    return true
+  }
+  return false
+}
+
 /**
  * 是否是Function
  * @param data any

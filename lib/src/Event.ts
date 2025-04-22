@@ -25,8 +25,7 @@ export default class Event<T extends Record<string, any[]>> {
   }
   off<K extends keyof T>(type: K, handler?: (...args: T[K]) => any) {
     if (this.handlers[type] instanceof Array) {
-      const handlers = this.handlers[type]
-      if (!handlers) return
+      const handlers = this.handlers[type] || []
       for (let i = 0; i < handlers.length; i++) {
         if (handler) {
           if (handlers[i] == handler) {

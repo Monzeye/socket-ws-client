@@ -3,45 +3,52 @@ import { State, WsReadyState } from './enum'
 import {
   isArrayBuffer,
   isBlob,
-  isBufferData,
+  isTypedArray,
+  isDataView,
   isFunction,
   setObjToUrlParams,
   transformProtocol,
   tryMsgParse
 } from './helper'
-import type { SocketClientConfig } from './types'
+import type { HeartbeatConfig, ReconnectConfig, SocketClientConfig } from './types'
+
+type WSocketInnerConfig = Omit<SocketClientConfig, 'heartbeat' | 'reconnect'> & { heartbeat?: HeartbeatConfig, reconnect?: ReconnectConfig }
 
 const defaultWsConfig: SocketClientConfig = {
   query: {},
   immediate: true,
   transformProtocol: true,
   protocols: undefined,
-  heartbeat: {
-    interval: 1000 * 3,
-    pingFormat: 'ping',
-    pongMatch: undefined,
-    timeout: 0,
-    timeoutCount: 0,
-    ignore: true
-  },
-  reconnect: {
-    interval: 1000 * 3,
-    retryCount: Infinity
-  }
+  transformMessageData: true,
 }
 
-class WSocket extends Events<{
+const defaultHeartbeatConfig: HeartbeatConfig = {
+  interval: 1000 * 3,
+  pingFormat: 'ping',
+  pongMatch: undefined,
+  timeout: 0,
+  timeoutCount: 0,
+  ignore: true
+}
+
+const defaultReconnectConfig: ReconnectConfig = {
+  interval: 1000 * 3,
+  retryCount: Infinity
+}
+
+class WSocket<D = any> extends Events<{
   state: [state: State]
   open: [ev: Event]
   close: [ev: CloseEvent]
   error: [ev: Event]
-  message: [data: MessageEvent]
+  message: [data: MessageEvent<D>]
 }> {
   static State = State
   url: string
-  config: SocketClientConfig
+  config: WSocketInnerConfig
   wsInstance: null | WebSocket
   state: State
+  private _isChangeUrlConnect: boolean
   private _reconnectTimer: number | NodeJS.Timeout | undefined
   private _heartbeatInter: number | NodeJS.Timeout | undefined
   private _heartbeatTimers: (number | NodeJS.Timeout)[]
@@ -51,11 +58,14 @@ class WSocket extends Events<{
   constructor(url: string, config: SocketClientConfig = {}) {
     super()
     this.url = url
-    this.config = { ...defaultWsConfig, ...config }
+    this.config = this._getConfig(config)
+
+
     this.wsInstance = null
 
     this.state = State.Initial
 
+    this._isChangeUrlConnect = false
     this._reconnectTimer
     this._heartbeatInter
     this._heartbeatTimers = []
@@ -68,8 +78,49 @@ class WSocket extends Events<{
     //自动触发
     this.config.immediate && this.connect()
   }
+  _getConfig(config: SocketClientConfig): WSocketInnerConfig {
+    let heartbeat: HeartbeatConfig
+    let reconnect: ReconnectConfig
+    if (typeof config.heartbeat === 'boolean') {
+      heartbeat = config.heartbeat ? { ...defaultHeartbeatConfig } : undefined!
+    } else {
+      heartbeat = {
+        ...defaultHeartbeatConfig,
+        ...config.heartbeat
+      }
+    }
+
+    if (typeof config.reconnect === 'boolean') {
+      reconnect = config.reconnect ? { ...defaultReconnectConfig } : undefined!
+    } else {
+      reconnect = {
+        ...defaultReconnectConfig,
+        ...config.reconnect
+      }
+    }
+
+    return {
+      ...defaultWsConfig,
+      ...config,
+      heartbeat,
+      reconnect
+    }
+  }
+  async setUrl(url: string) {
+    const currentStatus = this.state
+    if (url) {
+      this.url = url
+      this.state = State.Initial
+      // 如果是更改url导致的关闭链接，如果是连接中或已连接的等状态，则在关闭的时候再次链接 根据_isChangeUrlConnect判断是否需要自动触发链接
+      if (currentStatus === State.Connecting || currentStatus === State.Open || currentStatus === State.Reconnect) {
+        this._isChangeUrlConnect = true
+      }
+      this.close()
+    }
+  }
   async connect() {
-    await Promise.all([])
+    await Promise.resolve()
+    this._isChangeUrlConnect = false
     if (!window.WebSocket) {
       console.error('Does not support WebSocket!')
       return
@@ -108,6 +159,8 @@ class WSocket extends Events<{
       this.emit('close', event)
       this._clearHeartbeat()
       this._reconnect()
+      // 如果是更改url导致的关闭链接，如果是连接中或已连接的等状态，则在关闭的时候再次链接
+      this._isChangeUrlConnect && this.connect()
     }
     this.wsInstance.onerror = event => {
       this._changeState(State.Error)
@@ -140,17 +193,18 @@ class WSocket extends Events<{
       if (data) {
         if (typeof data === 'string') {
           this.wsInstance.send(data)
-        } else if (isBlob(data) || isArrayBuffer(data) || isBufferData(data)) {
+        } else if (isBlob(data) || isArrayBuffer(data) || isTypedArray(data) || isDataView(data)) {
           this.wsInstance.send(data)
         } else if (typeof data === 'object') {
           this.wsInstance.send(JSON.stringify(data))
         }
+        return
       }
     } else {
       console.warn('The connection has not been successfully established yet')
     }
   }
-  private _isMatchHeartbeatMsg(event: MessageEvent) {
+  private _isMatchHeartbeatMsg(event: MessageEvent<D>) {
     const pongMatch = this.config.heartbeat?.pongMatch
     if (pongMatch) {
       if (isFunction(pongMatch)) {
@@ -170,10 +224,10 @@ class WSocket extends Events<{
     return false
   }
   // 接收消息
-  private _receive(event: MessageEvent) {
+  private _receive(event: MessageEvent<D>) {
     if (typeof event.data === 'string') {
-      const newEvent = new MessageEvent('message', {
-        data: tryMsgParse(event.data),
+      const newEvent = new MessageEvent<D>('message', {
+        data: this.config.transformMessageData ? tryMsgParse(event.data) as D : event.data,
         origin: event.origin,
         lastEventId: event.lastEventId,
         source: event.source,
@@ -192,7 +246,8 @@ class WSocket extends Events<{
     } else if (
       isBlob(event.data) ||
       isArrayBuffer(event.data) ||
-      isBufferData(event.data)
+      isTypedArray(event.data) ||
+      isDataView(event.data)
     ) {
       this._resetHeartbeatTimer()
       const ignore = this.config.heartbeat?.ignore ?? true
@@ -227,7 +282,7 @@ class WSocket extends Events<{
     const retryCount = this.config.reconnect?.retryCount ?? Infinity
 
     // 重试次数=0 直接关闭
-    if (retryCount <= 0) {
+    if (retryCount <= 0 || !this.config.reconnect) {
       this.close()
       return
     }
@@ -283,7 +338,8 @@ class WSocket extends Events<{
     // const pongMatch = this.config.heartbeat?.pongMatch;
     this._clearHeartbeat()
     // 如果设置了心跳间隔，启用心跳逻辑
-    if (interval) {
+    if (this.config.heartbeat && interval) {
+
       this._heartbeatInter = setInterval(() => {
         // 发送ping消息，可以指定格式
         this.send(pingFormat)

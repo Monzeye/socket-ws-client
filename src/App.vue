@@ -5,6 +5,7 @@
     <button @click="handleSend">发送消息</button>
     <button @click="handleClose">关闭</button>
     <button @click="handleConnect">建立连接</button>
+    <button @click="handleChangeUrl">更改URL</button>
     <div>{{ stateStr }}</div>
     <div style="width: 500px; max-height: 500px; overflow-y: auto">
       <ul>
@@ -48,7 +49,7 @@ socket.on('open', () => {
 })
 
 socket.on('state', state => {
-  console.log(state)
+  console.log('state', state)
   switch (state) {
     case SocketClient.State.Connecting:
       stateStr.value = '连接中'
@@ -72,6 +73,7 @@ socket.on('state', state => {
 })
 
 socket.on('message', event => {
+  console.log(event)
   messageList.value.unshift(event.data)
   if (messageList.value.length > 100) {
     messageList.value.pop()
@@ -93,6 +95,10 @@ function handleClose() {
 
 function handleConnect() {
   socket.connect()
+}
+
+function handleChangeUrl() {
+  socket.setUrl('http://localhost:8392')
 }
 </script>
 <style lang="scss" scoped>
