@@ -10,16 +10,23 @@ import {
   transformProtocol,
   tryMsgParse
 } from './helper'
-import type { HeartbeatConfig, ReconnectConfig, SocketClientConfig } from './types'
+import type {
+  HeartbeatConfig,
+  ReconnectConfig,
+  SocketClientConfig
+} from './types'
 
-type WSocketInnerConfig = Omit<SocketClientConfig, 'heartbeat' | 'reconnect'> & { heartbeat?: HeartbeatConfig, reconnect?: ReconnectConfig }
+type WSocketInnerConfig = Omit<
+  SocketClientConfig,
+  'heartbeat' | 'reconnect'
+> & { heartbeat?: HeartbeatConfig; reconnect?: ReconnectConfig }
 
 const defaultWsConfig: SocketClientConfig = {
   query: {},
   immediate: true,
   transformProtocol: true,
   protocols: undefined,
-  transformMessageData: true,
+  transformMessageData: true
 }
 
 const defaultHeartbeatConfig: HeartbeatConfig = {
@@ -37,11 +44,12 @@ const defaultReconnectConfig: ReconnectConfig = {
 }
 
 class WSocket<D = any> extends Events<{
-  state: [state: State]
+  state: [state: State, ev?: Event]
   open: [ev: Event]
   close: [ev: CloseEvent]
   error: [ev: Event]
   message: [data: MessageEvent<D>]
+  timeout: []
 }> {
   static State = State
   url: string
@@ -51,6 +59,7 @@ class WSocket<D = any> extends Events<{
   private _isChangeUrlConnect: boolean
   private _reconnectTimer: number | NodeJS.Timeout | undefined
   private _heartbeatInter: number | NodeJS.Timeout | undefined
+  private _timeoutTimer: number | NodeJS.Timeout | undefined
   private _heartbeatTimers: (number | NodeJS.Timeout)[]
   private _openReconnect: boolean
   private _reconnectRetryCount: number
@@ -59,7 +68,6 @@ class WSocket<D = any> extends Events<{
     super()
     this.url = url
     this.config = this._getConfig(config)
-
 
     this.wsInstance = null
 
@@ -112,7 +120,11 @@ class WSocket<D = any> extends Events<{
       this.url = url
       this.state = State.Initial
       // 如果是更改url导致的关闭链接，如果是连接中或已连接的等状态，则在关闭的时候再次链接 根据_isChangeUrlConnect判断是否需要自动触发链接
-      if (currentStatus === State.Connecting || currentStatus === State.Open || currentStatus === State.Reconnect) {
+      if (
+        currentStatus === State.Connecting ||
+        currentStatus === State.Open ||
+        currentStatus === State.Reconnect
+      ) {
         this._isChangeUrlConnect = true
       }
       this.close()
@@ -133,7 +145,7 @@ class WSocket<D = any> extends Events<{
       return this
     }
 
-    // 开启端开重连
+    // 开启断开重连
     this._openReconnect = true
     const { binaryType } = this.config
     this.wsInstance = new WebSocket(
@@ -142,20 +154,35 @@ class WSocket<D = any> extends Events<{
     )
 
     this._changeState(State.Connecting)
+
+    // 超时检测
+    if (this.config.timeout) {
+      this._timeoutTimer = setTimeout(() => {
+        if (this.state !== State.Open) {
+          this._changeState(State.Timeout)
+          this.emit('timeout')
+          this._clearHeartbeat()
+          this.wsInstance?.close()
+          this._reconnect()
+        }
+      }, this.config.timeout)
+    }
+
     if (binaryType) {
       this.wsInstance.binaryType = binaryType
     }
     this.wsInstance.onopen = event => {
       this._heartbeat()
       this._reconnectRetryCount = 0
-      this._changeState(State.Open)
+      this._changeState(State.Open, event)
+      this._clearTimeout()
       this.emit('open', event)
     }
     this.wsInstance.onmessage = event => {
       this._receive(event)
     }
     this.wsInstance.onclose = event => {
-      this._changeState(State.Closed)
+      this._changeState(State.Closed, event)
       this.emit('close', event)
       this._clearHeartbeat()
       this._reconnect()
@@ -163,7 +190,7 @@ class WSocket<D = any> extends Events<{
       this._isChangeUrlConnect && this.connect()
     }
     this.wsInstance.onerror = event => {
-      this._changeState(State.Error)
+      this._changeState(State.Error, event)
       this.emit('error', event)
     }
     return this
@@ -193,7 +220,12 @@ class WSocket<D = any> extends Events<{
       if (data) {
         if (typeof data === 'string') {
           this.wsInstance.send(data)
-        } else if (isBlob(data) || isArrayBuffer(data) || isTypedArray(data) || isDataView(data)) {
+        } else if (
+          isBlob(data) ||
+          isArrayBuffer(data) ||
+          isTypedArray(data) ||
+          isDataView(data)
+        ) {
           this.wsInstance.send(data)
         } else if (typeof data === 'object') {
           this.wsInstance.send(JSON.stringify(data))
@@ -227,7 +259,9 @@ class WSocket<D = any> extends Events<{
   private _receive(event: MessageEvent<D>) {
     if (typeof event.data === 'string') {
       const newEvent = new MessageEvent<D>('message', {
-        data: this.config.transformMessageData ? tryMsgParse(event.data) as D : event.data,
+        data: this.config.transformMessageData
+          ? (tryMsgParse(event.data) as D)
+          : event.data,
         origin: event.origin,
         lastEventId: event.lastEventId,
         source: event.source,
@@ -260,10 +294,10 @@ class WSocket<D = any> extends Events<{
       this.emit('message', event)
     }
   }
-  private _changeState(state: State) {
+  private _changeState(state: State, ev?: Event) {
     if (this.state !== state) {
       this.state = state
-      this.emit('state', this.state)
+      this.emit('state', this.state, ev)
     }
   }
   private _clearReconnect() {
@@ -310,6 +344,7 @@ class WSocket<D = any> extends Events<{
     }
     this._clearReconnect()
     this._clearHeartbeat()
+    this._clearTimeout()
     // 主动关闭 ==> 关闭断开重连
     this._openReconnect = false
     if (this.wsInstance?.readyState !== WsReadyState.Closed) {
@@ -317,6 +352,9 @@ class WSocket<D = any> extends Events<{
     } else {
       this._changeState(State.Closed)
     }
+  }
+  private _clearTimeout() {
+    this._timeoutTimer && clearTimeout(this._timeoutTimer)
   }
   // 重置心跳
   private _resetHeartbeatTimer() {
@@ -339,7 +377,6 @@ class WSocket<D = any> extends Events<{
     this._clearHeartbeat()
     // 如果设置了心跳间隔，启用心跳逻辑
     if (this.config.heartbeat && interval) {
-
       this._heartbeatInter = setInterval(() => {
         // 发送ping消息，可以指定格式
         this.send(pingFormat)

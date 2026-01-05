@@ -21,4 +21,5 @@ export interface SocketClientConfig {
   transformMessageData?: boolean
   heartbeat?: boolean | HeartbeatConfig
   reconnect?: boolean | ReconnectConfig
+  timeout?: number
 }

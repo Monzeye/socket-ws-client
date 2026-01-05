@@ -13,5 +13,6 @@ export enum State {
   Reconnect = 3,
   Closing = 4,
   Closed = 5,
-  Error = 6
+  Error = 6,
+  Timeout = 7
 }

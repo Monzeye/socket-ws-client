@@ -39,7 +39,7 @@ const socket = new SocketClient('http://localhost:8392', {
     pingFormat: 'ping'
   },
   reconnect: {
-    interval: 1000 * 1,
+    interval: 1000 * 5,
     retryCount: 0
   }
 })
@@ -48,8 +48,8 @@ socket.on('open', () => {
   console.log('socket 连接已连接')
 })
 
-socket.on('state', state => {
-  console.log('state', state)
+socket.on('state', (state, event) => {
+  console.log('state', state, event)
   switch (state) {
     case SocketClient.State.Connecting:
       stateStr.value = '连接中'
@@ -68,6 +68,9 @@ socket.on('state', state => {
       break
     case SocketClient.State.Error:
       stateStr.value = '连接出错'
+      break
+    case SocketClient.State.Timeout:
+      stateStr.value = '连接超时'
       break
   }
 })
