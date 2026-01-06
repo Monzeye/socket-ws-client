@@ -1,6 +1,6 @@
 {
   "name": "socket-ws-client",
-  "version": "1.2.2",
+  "version": "1.2.6",
   "type": "module",
   "author": {
     "name": "Monzeye",
